@@ -1,0 +1,25 @@
+{
+  "name": "@personaldrive/worker-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker REST API for Personal Drive.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "npm run build --workspace @personaldrive/shared --workspace @personaldrive/upload-engine && tsc --noEmit",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build --workspace @personaldrive/shared --workspace @personaldrive/upload-engine && vitest run",
+    "clean": "rm -rf dist .wrangler"
+  },
+  "dependencies": {
+    "@personaldrive/shared": "*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240821.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0",
+    "wrangler": "^3.78.0"
+  }
+}

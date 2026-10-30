@@ -1,0 +1,608 @@
+"use client";
+
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronRight,
+  Download,
+  ExternalLink,
+  House,
+  Music,
+  File,
+  TriangleAlert,
+  Eye,
+  Loader2,
+  AlertCircle,
+  ZoomIn,
+  ZoomOut,
+  Maximize,
+  Minimize,
+} from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { api, ApiError, authHeaders, resolveApiUrl } from "@/lib/api";
+import { Button, Card, Skeleton, ErrorBanner } from "@/components/ui";
+import { UnlockPasswordModal } from "@/components/UnlockPasswordModal";
+import type { DriveFile, ListFilesResponse, PreviewResponse } from "@personaldrive/shared";
+
+export default function PreviewPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-slate-50 flex items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-brand-400" />
+        </main>
+      }
+    >
+      <PreviewInner />
+    </Suspense>
+  );
+}
+
+type ZoomMode = "fit" | "original" | "custom";
+
+function PreviewInner() {
+  const { token } = useAuth();
+  const router = useRouter();
+  const params = useSearchParams();
+  const id = params.get("id");
+  const spaceIdParam = params.get("spaceId");
+  const folderId = useMemo(() => params.get("folderId") ?? null, [params]);
+
+  const [data, setData] = useState<PreviewResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lockedPrompt, setLockedPrompt] = useState<{
+    spaceId: string;
+    folderId: string;
+    folderName: string;
+  } | null>(null);
+
+  const effectiveSpaceId = spaceIdParam ?? data?.spaceId ?? null;
+  const resolvedMediaUrl = useMemo(
+    () => (data?.contentUrl ? resolveApiUrl(data.contentUrl) : null),
+    [data?.contentUrl]
+  );
+  const { blobUrl: contentUrl, error: contentError, loading: contentLoading } = useAuthedBlob(
+    resolvedMediaUrl,
+    token
+  );
+
+  // Zoom controls
+  const [zoomMode, setZoomMode] = useState<ZoomMode>("fit");
+  const [zoomLevel, setZoomLevel] = useState(100);
+  const ZOOM_STEP = 25;
+  const ZOOM_MIN = 25;
+  const ZOOM_MAX = 400;
+
+  function zoomIn() {
+    setZoomMode("custom");
+    setZoomLevel((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP));
+  }
+
+  function zoomOut() {
+    setZoomMode("custom");
+    setZoomLevel((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP));
+  }
+
+  function fitScreen() {
+    setZoomMode("fit");
+    setZoomLevel(100);
+  }
+
+  function originalSize() {
+    setZoomMode("original");
+    setZoomLevel(100);
+  }
+
+  useEffect(() => {
+    setZoomMode("fit");
+    setZoomLevel(100);
+  }, [id]);
+
+  // Folder context for prev/next sibling navigation
+  const [folderData, setFolderData] = useState<ListFilesResponse | null>(null);
+
+  useEffect(() => {
+    if (!effectiveSpaceId) return;
+    let alive = true;
+    api
+      .listFiles(effectiveSpaceId, folderId)
+      .then((res) => {
+        if (alive) setFolderData(res);
+      })
+      .catch(() => {
+        /* ignore sibling load error */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [effectiveSpaceId, folderId, token]);
+
+  const siblings = useMemo<DriveFile[]>(() => {
+    if (!folderData) return [];
+    return [...folderData.files].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true })
+    );
+  }, [folderData]);
+
+  const currentIndex = useMemo(() => siblings.findIndex((f) => f.id === id), [siblings, id]);
+  const prevItem = currentIndex > 0 ? siblings[currentIndex - 1] : null;
+  const nextItem = currentIndex >= 0 && currentIndex < siblings.length - 1 ? siblings[currentIndex + 1] : null;
+
+  const navigateToSibling = useCallback(
+    (fileId: string) => {
+      setData(null);
+      setError(null);
+      const q = new URLSearchParams({ id: fileId });
+      if (effectiveSpaceId) q.set("spaceId", effectiveSpaceId);
+      if (folderId) q.set("folderId", folderId);
+      router.push(`/preview?${q.toString()}`);
+    },
+    [effectiveSpaceId, folderId, router]
+  );
+
+  const goBackToDrive = useCallback(() => {
+    if (!effectiveSpaceId) {
+      router.push("/");
+      return;
+    }
+    const q = new URLSearchParams({ spaceId: effectiveSpaceId });
+    if (folderId) q.set("folderId", folderId);
+    router.push(`/drive?${q.toString()}`);
+  }, [effectiveSpaceId, folderId, router]);
+
+  const loadPreview = useCallback(() => {
+    if (!id) return;
+    setData(null);
+    setError(null);
+    api
+      .preview(id)
+      .then((res) => {
+        setData(res);
+        setLockedPrompt(null);
+      })
+      .catch((err) => {
+        if (err instanceof ApiError && err.code === "FOLDER_LOCKED" && err.spaceId) {
+          setLockedPrompt({
+            spaceId: err.spaceId,
+            folderId: err.lockedFolderId ?? err.spaceId,
+            folderName: err.lockedFolderName ?? "Folder Terkunci",
+          });
+        } else {
+          setError(err instanceof Error ? err.message : "Gagal memuat preview file.");
+        }
+      });
+  }, [id]);
+
+  useEffect(() => {
+    loadPreview();
+  }, [loadPreview, token]);
+
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "ArrowLeft" && prevItem) {
+        e.preventDefault();
+        navigateToSibling(prevItem.id);
+      } else if (e.key === "ArrowRight" && nextItem) {
+        e.preventDefault();
+        navigateToSibling(nextItem.id);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        goBackToDrive();
+      } else if (e.key === "+" || e.key === "=") {
+        e.preventDefault();
+        zoomIn();
+      } else if (e.key === "-") {
+        e.preventDefault();
+        zoomOut();
+      } else if (e.key === "0") {
+        e.preventDefault();
+        fitScreen();
+      }
+    },
+    [prevItem, nextItem, navigateToSibling, goBackToDrive]
+  );
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+
+  if (!id) {
+    return (
+      <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <Card className="max-w-sm w-full p-10 text-center">
+          <div className="rounded-2xl bg-slate-100 p-5 inline-flex mb-4">
+            <Eye className="h-8 w-8 text-slate-400" />
+          </div>
+          <p className="font-semibold text-slate-700 mb-1">Tidak ada file dipilih</p>
+          <p className="text-sm text-slate-400 mb-6">Silakan kembali ke Drive dan pilih file.</p>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 text-slate-700 hover:bg-slate-100 rounded-xl px-4 py-2 text-sm font-medium transition-all border border-slate-200"
+          >
+            <ArrowLeft className="h-4 w-4" /> Kembali
+          </Link>
+        </Card>
+      </main>
+    );
+  }
+
+  const hasContent = !!(
+    isImage(data?.mimeType ?? "") ||
+    isVideo(data?.mimeType ?? "") ||
+    isAudio(data?.mimeType ?? "") ||
+    isPdf(data?.mimeType ?? "") ||
+    isText(data?.mimeType ?? "")
+  );
+
+  const isZoomable = isImage(data?.mimeType ?? "") || isPdf(data?.mimeType ?? "");
+  const breadcrumb = folderData?.breadcrumb ?? [];
+
+  const imageStyle = useMemo(() => {
+    if (zoomMode === "fit") return { maxWidth: "100%", maxHeight: "80vh" };
+    if (zoomMode === "original") return {};
+    return { width: `${zoomLevel}%`, maxWidth: "none" };
+  }, [zoomMode, zoomLevel]);
+
+  return (
+    <main className="min-h-screen bg-slate-50">
+      <header className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-sm">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-3">
+          <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto">
+            <button
+              onClick={goBackToDrive}
+              className="flex items-center gap-1.5 text-brand-600 hover:text-brand-700 font-semibold shrink-0"
+            >
+              <House className="h-4 w-4" />
+              <span className="hidden sm:inline text-sm">{folderData?.space.name ?? "Drive"}</span>
+            </button>
+            {breadcrumb.map((c) => (
+              <span key={c.id} className="flex items-center gap-1 min-w-0 shrink-0">
+                <ChevronRight className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+                <button
+                  onClick={goBackToDrive}
+                  className="text-sm text-slate-600 hover:text-slate-900 truncate max-w-[8rem]"
+                >
+                  {c.name}
+                </button>
+              </span>
+            ))}
+            <span className="flex items-center gap-1 min-w-0 shrink-0">
+              <ChevronRight className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+              <span className="text-sm text-slate-900 font-medium truncate max-w-[12rem]">
+                {data?.name ?? "…"}
+              </span>
+            </span>
+          </div>
+
+          {data && (
+            <span className="text-xs text-slate-400 shrink-0 hidden md:inline">
+              {data.mimeType} · {formatSize(data.size)}
+            </span>
+          )}
+
+          {isZoomable && (
+            <div className="flex items-center gap-1 shrink-0 bg-slate-100 rounded-lg p-0.5">
+              <button
+                onClick={zoomOut}
+                disabled={zoomMode === "custom" && zoomLevel <= ZOOM_MIN}
+                className="rounded-md p-1.5 text-slate-500 hover:text-slate-700 hover:bg-white transition-all disabled:opacity-30"
+                title="Perkecil"
+              >
+                <ZoomOut className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={fitScreen}
+                className={`rounded-md p-1.5 text-xs font-medium transition-all ${
+                  zoomMode === "fit" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+                title="Sesuaikan layar"
+              >
+                <Maximize className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={originalSize}
+                className={`rounded-md p-1.5 text-xs font-medium transition-all ${
+                  zoomMode === "original" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+                title="Ukuran asli"
+              >
+                <Minimize className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={zoomIn}
+                disabled={zoomMode === "custom" && zoomLevel >= ZOOM_MAX}
+                className="rounded-md p-1.5 text-slate-500 hover:text-slate-700 hover:bg-white transition-all disabled:opacity-30"
+                title="Perbesar"
+              >
+                <ZoomIn className="h-3.5 w-3.5" />
+              </button>
+              <span className="text-[10px] text-slate-400 tabular-nums min-w-[3rem] text-center">
+                {zoomMode === "custom" ? `${zoomLevel}%` : zoomMode === "fit" ? "Fit" : "1:1"}
+              </span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 shrink-0">
+            {contentUrl && data && (
+              <a
+                href={contentUrl}
+                download={data.name}
+                className="inline-flex items-center gap-1.5 bg-brand-500 text-white hover:bg-brand-600 rounded-lg px-3 py-1.5 text-sm font-medium transition-all shadow-sm"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Download</span>
+              </a>
+            )}
+            {data?.role === "owner" && data.webViewLink && !data.trashed && (
+              <a
+                href={data.webViewLink}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Buka di Google Drive</span>
+              </a>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+        {error && <ErrorBanner message={error} />}
+        {contentError && <ErrorBanner message={`Gagal memuat isi file: ${contentError}`} />}
+
+        {data?.trashed && (
+          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-4">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>Item ini sedang berada di Sampah.</span>
+          </div>
+        )}
+
+        {!data && !error && !lockedPrompt && (
+          <Card className="p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-10 w-10 rounded-xl" />
+              <div className="space-y-2 flex-1">
+                <Skeleton className="h-5 w-1/3" />
+                <Skeleton className="h-3 w-1/4" />
+              </div>
+            </div>
+            <Skeleton className="h-96 rounded-2xl" />
+          </Card>
+        )}
+
+        {data && (
+          <Card className="overflow-hidden relative">
+            <div className={`p-6 ${zoomMode !== "fit" ? "overflow-auto" : ""}`}>
+              {contentLoading && hasContent && (
+                <div className="flex items-center justify-center h-64 text-slate-400 gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin text-brand-400" />
+                  <span className="text-sm">Memuat preview…</span>
+                </div>
+              )}
+
+              {isImage(data.mimeType) && contentUrl && (
+                <div className="flex justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={contentUrl}
+                    alt={data.name}
+                    className="rounded-2xl mx-auto shadow-sm transition-all duration-200"
+                    style={imageStyle}
+                  />
+                </div>
+              )}
+              {isVideo(data.mimeType) && contentUrl && (
+                <video src={contentUrl} controls className="max-w-full rounded-2xl mx-auto shadow-sm w-full" />
+              )}
+              {isAudio(data.mimeType) && contentUrl && (
+                <div className="flex flex-col items-center gap-4 py-6">
+                  <div className="rounded-2xl bg-slate-100 p-6">
+                    <Music className="h-12 w-12 text-slate-400" />
+                  </div>
+                  <audio src={contentUrl} controls className="w-full max-w-lg" />
+                </div>
+              )}
+              {isPdf(data.mimeType) && contentUrl && (
+                <iframe
+                  src={contentUrl}
+                  title={data.name}
+                  className="w-full h-[75vh] rounded-2xl border border-slate-100"
+                  style={zoomMode === "custom" ? { zoom: zoomLevel / 100 } : undefined}
+                />
+              )}
+              {isText(data.mimeType) && contentUrl && <TextPreview blobUrl={contentUrl} />}
+              {data.thumbnailUrl && !isImage(data.mimeType) && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={data.thumbnailUrl} alt="" className="max-w-sm rounded-2xl mb-4 shadow-sm" />
+              )}
+              {!hasContent && !contentLoading && (
+                <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                  <div className="rounded-2xl bg-slate-100 p-5">
+                    <File className="h-8 w-8 text-slate-400" />
+                  </div>
+                  <p className="text-sm text-slate-500 font-medium">Preview tidak tersedia untuk tipe file ini</p>
+                  <p className="text-xs text-slate-400">Gunakan tombol Download di atas untuk membuka file ini.</p>
+                </div>
+              )}
+            </div>
+
+            {(prevItem || nextItem) && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+                <button
+                  onClick={() => prevItem && navigateToSibling(prevItem.id)}
+                  disabled={!prevItem}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg px-3 py-1.5 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  <span className="hidden sm:inline truncate max-w-[12rem]">{prevItem?.name ?? "Sebelumnya"}</span>
+                </button>
+                <span className="text-xs text-slate-400 tabular-nums">
+                  {currentIndex >= 0 ? `${currentIndex + 1} / ${siblings.length}` : ""}
+                </span>
+                <button
+                  onClick={() => nextItem && navigateToSibling(nextItem.id)}
+                  disabled={!nextItem}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg px-3 py-1.5 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <span className="hidden sm:inline truncate max-w-[12rem]">{nextItem?.name ?? "Berikutnya"}</span>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </Card>
+        )}
+
+        {error && !data && (
+          <Card className="p-10 text-center">
+            <div className="rounded-2xl bg-red-50 p-5 inline-flex mb-4">
+              <TriangleAlert className="h-8 w-8 text-red-400" />
+            </div>
+            <p className="font-semibold text-slate-700 mb-1">Preview gagal dimuat</p>
+            <p className="text-sm text-slate-400 mb-6">{error}</p>
+            <Button variant="ghost" onClick={goBackToDrive}>
+              <ArrowLeft className="h-4 w-4" /> Kembali ke Drive
+            </Button>
+          </Card>
+        )}
+      </div>
+
+      {lockedPrompt && (
+        <UnlockPasswordModal
+          open={Boolean(lockedPrompt)}
+          spaceId={lockedPrompt.spaceId}
+          folderId={lockedPrompt.folderId}
+          folderName={lockedPrompt.folderName}
+          onSuccess={() => {
+            setLockedPrompt(null);
+            loadPreview();
+          }}
+          onClose={() => {
+            setLockedPrompt(null);
+            goBackToDrive();
+          }}
+        />
+      )}
+    </main>
+  );
+}
+
+function useAuthedBlob(
+  url: string | null,
+  token: string | null
+): { blobUrl: string | null; error: string | null; loading: boolean } {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!url) {
+      setBlobUrl(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    let alive = true;
+    let objectUrl: string | null = null;
+    setBlobUrl(null);
+    setError(null);
+    setLoading(true);
+    fetch(url, { headers: authHeaders() })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.blob();
+      })
+      .then((blob) => {
+        if (!alive) return;
+        objectUrl = URL.createObjectURL(blob);
+        setBlobUrl(objectUrl);
+      })
+      .catch((err) => {
+        if (alive) setError(err instanceof Error ? err.message : "Failed to load content.");
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [url, token]);
+
+  return { blobUrl, error, loading };
+}
+
+function isImage(m: string): boolean {
+  return m.startsWith("image/");
+}
+function isVideo(m: string): boolean {
+  return m.startsWith("video/");
+}
+function isAudio(m: string): boolean {
+  return m.startsWith("audio/");
+}
+function isPdf(m: string): boolean {
+  return m === "application/pdf";
+}
+function isText(m: string): boolean {
+  return (
+    m.startsWith("text/") ||
+    m === "application/json" ||
+    m === "application/xml" ||
+    m === "application/javascript"
+  );
+}
+
+function TextPreview({ blobUrl }: { blobUrl: string }) {
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setText(null);
+    setError(null);
+    fetch(blobUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then((body) => {
+        if (alive) setText(body);
+      })
+      .catch((err) => {
+        if (alive) setError(err instanceof Error ? err.message : "Failed to load text.");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [blobUrl]);
+
+  if (error) return <p className="text-sm text-red-600">{error}</p>;
+  if (text == null) {
+    return (
+      <div className="flex items-center justify-center h-32 gap-2 text-slate-400">
+        <Loader2 className="h-4 w-4 animate-spin text-brand-400" />
+        <span className="text-sm">Memuat teks…</span>
+      </div>
+    );
+  }
+  return (
+    <pre className="whitespace-pre-wrap break-words bg-slate-50 rounded-2xl p-4 max-h-[70vh] overflow-auto text-xs font-mono text-slate-700 leading-relaxed border border-slate-100">
+      {text}
+    </pre>
+  );
+}
+
+function formatSize(bytes: number | null | undefined): string {
+  if (bytes == null || !Number.isFinite(bytes)) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
