@@ -1,0 +1,29 @@
+{
+  "name": "personaldrive",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Personal Drive — multi-user privacy-first Google Drive client with per-person spaces and optional folder passwords.",
+  "workspaces": [
+    "packages/*",
+    "shared",
+    "apps/*",
+    "workers/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:packages": "npm run build --workspace @personaldrive/shared --workspace @personaldrive/upload-engine",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "echo 'lint: not configured'",
+    "clean": "rm -rf apps/*/.next apps/*/out apps/*/dist packages/*/dist workers/*/dist shared/dist node_modules apps/*/node_modules packages/*/node_modules workers/*/node_modules shared/node_modules",
+    "prepare": "npm run build:packages"
+  },
+  "engines": {
+    "node": ">=18.18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

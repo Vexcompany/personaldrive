@@ -1,0 +1,32 @@
+{
+  "name": "@personaldrive/web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Next.js frontend for Personal Drive.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "npm run build --workspace @personaldrive/shared --workspace @personaldrive/upload-engine && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'web: no tests yet' && exit 0",
+    "clean": "rm -rf .next out dist"
+  },
+  "dependencies": {
+    "@personaldrive/shared": "*",
+    "@personaldrive/upload-engine": "*",
+    "lucide-react": "^1.28.0",
+    "next": "^15.5.7",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.4.0"
+  }
+}

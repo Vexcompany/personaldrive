@@ -1,0 +1,10 @@
+node_modules/
+.next/
+dist/
+.vite/
+.wrangler/
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+.dev.vars
