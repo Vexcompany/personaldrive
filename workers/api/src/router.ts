@@ -259,8 +259,6 @@ async function revokePublicTree(
   state: { visited: number } = { visited: 0 }
 ): Promise<void> {
   if (depth > 20) throwHttp(400, "INVALID_PAYLOAD", "Struktur folder terlalu dalam untuk pengamanan otomatis.");
-  state.visited += 1;
-  if (state.visited > 1000) throwHttp(413, "INVALID_PAYLOAD", "Folder memiliki lebih dari 1.000 item; penguncian dibatalkan agar tidak meninggalkan tautan publik.");
   // Revoke the parent first so inherited public permissions disappear before child checks.
   await revokePublicPermissions(env, folderId);
   const children = await listChildren(env, folderId);
