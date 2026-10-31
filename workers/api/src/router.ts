@@ -168,7 +168,7 @@ function toClientFile(f: DriveFile, session: SessionState, spaceFolder: DriveFil
     size: f.size ? Number(f.size) : null,
     parents: f.parents ?? [],
     thumbnailLink: f.thumbnailLink,
-    webViewLink: f.webViewLink,
+    webViewLink: null,
     modifiedTime: f.modifiedTime,
     trashed: f.trashed,
   };
@@ -313,10 +313,18 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       if (!body) return err("INVALID_PAYLOAD", "Invalid JSON body.", 400, origin);
 
       const name = validateFolderName(body.name);
-      if (typeof body.ownerPassword !== "string" || body.ownerPassword.length < 1) {
-        return err("INVALID_PAYLOAD", "Password pemilik wajib diisi.", 400, origin);
+      if (typeof body.ownerPassword !== "string" || body.ownerPassword.length < 10) {
+        return err("INVALID_PAYLOAD", "Password pemilik minimal 10 karakter.", 400, origin);
       }
       const visibility: FolderVisibility = body.visibility === "locked" ? "locked" : "public";
+      if (visibility === "locked") {
+        if (typeof body.visitorPassword !== "string" || body.visitorPassword.length < 10) {
+          return err("INVALID_PAYLOAD", "Password penguncian wajib diisi dan minimal 10 karakter.", 400, origin);
+        }
+        if (body.visitorPassword === body.ownerPassword) {
+          return err("INVALID_PAYLOAD", "Password pemilik dan password penguncian harus berbeda.", 400, origin);
+        }
+      }
 
       const existing = await listChildren(env, rootId);
       const duplicate = existing.find(
@@ -338,11 +346,7 @@ export async function handle(request: Request, env: Env): Promise<Response> {
         pd_cat: String(Math.floor(Date.now() / 1000)),
       };
 
-      if (
-        visibility === "locked" &&
-        typeof body.visitorPassword === "string" &&
-        body.visitorPassword.trim().length > 0
-      ) {
+      if (visibility === "locked" && typeof body.visitorPassword === "string") {
         const lockSalt = generateSalt();
         const lockHash = await hashPassword(body.visitorPassword, lockSalt);
         appProperties.pd_lh = lockHash;
@@ -585,17 +589,15 @@ export async function handle(request: Request, env: Env): Promise<Response> {
         if (visibility === "public") {
           appPatch.pd_lh = null;
           appPatch.pd_ls = null;
-        } else if (typeof body.password === "string") {
-          if (body.password.length > 0) {
-            const vSalt = generateSalt();
-            const vHash = await hashPassword(body.password, vSalt);
-            appPatch.pd_lh = vHash;
-            appPatch.pd_ls = vSalt;
-          } else {
-            // Empty string clears separate visitor password so owner password unlocks
-            appPatch.pd_lh = null;
-            appPatch.pd_ls = null;
-          }
+        } else if (typeof body.password === "string" && body.password.length >= 10) {
+          const sameAsOwner = await verifyPassword(body.password, spaceFolder.appProperties?.pd_os, spaceFolder.appProperties?.pd_oh);
+          if (sameAsOwner) return err("INVALID_PAYLOAD", "Password penguncian harus berbeda dari password pemilik.", 400, origin);
+          const vSalt = generateSalt();
+          const vHash = await hashPassword(body.password, vSalt);
+          appPatch.pd_lh = vHash;
+          appPatch.pd_ls = vSalt;
+        } else if (!hasSeparateVisitorPassword(spaceFolder.appProperties)) {
+          return err("INVALID_PAYLOAD", "Password penguncian baru wajib diisi (minimal 10 karakter).", 400, origin);
         }
 
         const updated = await updateFileMetadata(env, spaceFolder.id, {
@@ -621,13 +623,15 @@ export async function handle(request: Request, env: Env): Promise<Response> {
           appPatch.pd_lh = null;
           appPatch.pd_ls = null;
         } else {
-          if (typeof body.password === "string" && body.password.length > 0) {
+          if (typeof body.password === "string" && body.password.length >= 10) {
+            const sameAsOwner = await verifyPassword(body.password, spaceFolder.appProperties?.pd_os, spaceFolder.appProperties?.pd_oh);
+            if (sameAsOwner) return err("INVALID_PAYLOAD", "Password penguncian harus berbeda dari password pemilik.", 400, origin);
             const subSalt = generateSalt();
             const subHash = await hashPassword(body.password, subSalt);
             appPatch.pd_lh = subHash;
             appPatch.pd_ls = subSalt;
           } else if (!targetFolder.appProperties?.pd_lh || !targetFolder.appProperties?.pd_ls) {
-            return err("INVALID_PAYLOAD", "Masukkan password untuk mengunci subfolder ini.", 400, origin);
+            return err("INVALID_PAYLOAD", "Password penguncian wajib diisi (minimal 10 karakter).", 400, origin);
           }
         }
 
@@ -1104,7 +1108,7 @@ export async function handle(request: Request, env: Env): Promise<Response> {
           size: file.size ? Number(file.size) : null,
           thumbnailUrl,
           contentUrl,
-          webViewLink: file.webViewLink,
+          webViewLink: null,
           trashed: file.trashed,
         },
         {},
@@ -1195,8 +1199,7 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       assertOwnerAccess(session, spaceFolder);
       const file = chain[chain.length - 1];
       if (file.trashed) return err("ITEM_IN_TRASH", "Tidak dapat membagikan item di Sampah.", 400, origin);
-      const shared = await ensurePublicPermission(env, body.fileId);
-      return json({ webViewLink: shared.webViewLink }, {}, origin);
+      return err("FORBIDDEN", "Berbagi langsung melalui Google Drive dinonaktifkan agar penguncian PersonalDrive tidak bisa dilewati. Ubah folder menjadi Publik untuk membagikan isinya.", 403, origin);
     }
 
     // ── MOVE (Owner only, within same space) ───────────────────────────────
