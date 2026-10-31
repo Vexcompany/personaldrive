@@ -300,6 +300,22 @@ export async function listPermissions(env: Env, fileId: string): Promise<Permiss
   }));
 }
 
+export async function revokePublicPermissions(env: Env, fileId: string): Promise<void> {
+  if (isMock(env)) return;
+  const permissions = await listPermissions(env, fileId);
+  for (const permission of permissions) {
+    if (permission.type !== "anyone" || !permission.id) continue;
+    const response = await authedFetch(
+      `${DRIVE_API}/files/${encodeURIComponent(fileId)}/permissions/${encodeURIComponent(permission.id)}`,
+      { method: "DELETE" },
+      env
+    );
+    if (!response.ok && response.status !== 404) {
+      throw new HttpError(response.status, "DRIVE_ERROR", await response.text());
+    }
+  }
+}
+
 export async function moveFile(env: Env, fileId: string, newParentId: string): Promise<DriveFile> {
   if (isMock(env)) return mockDrive.moveFile(mockRoot(env), fileId, newParentId);
   const file = await getFile(env, fileId);
