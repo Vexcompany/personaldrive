@@ -3,7 +3,7 @@ import { isValidGoogleUploadSessionUri } from "../google";
 import { signJwt, verifyJwt } from "../jwt";
 
 const SECRET = "test-secret";
-const b64url = (value: string) => btoa(value).replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_");
+const b64url = (value: string) => btoa(value).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 
 describe("security hardening", () => {
   it("accepts only Google Drive resumable upload session URLs", () => {
