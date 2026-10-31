@@ -268,6 +268,8 @@ export function FolderSecurityModal({
                       : "Masukkan password untuk subfolder ini…"
                   }
                   className="input pr-10"
+                  minLength={8}
+                  autoComplete="new-password"
                 />
                 <button
                   type="button"
@@ -315,6 +317,12 @@ export function FolderSecurityModal({
                     }}
                     placeholder="Password khusus tamu (Read-Only)…"
                     className="input text-xs"
+                  minLength={8}
+                  autoComplete="new-password"
+                    minLength={8}
+                    autoComplete="new-password"
+                    minLength={8}
+                    autoComplete="new-password"
                   />
                   {space.hasVisitorPassword && (
                     <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
