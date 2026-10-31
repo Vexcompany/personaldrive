@@ -313,12 +313,12 @@ export async function handle(request: Request, env: Env): Promise<Response> {
 
       const name = validateFolderName(body.name);
       if (typeof body.ownerPassword !== "string" || body.ownerPassword.length < 8) {
-        return err("INVALID_PAYLOAD", "Password pemilik minimal 10 karakter.", 400, origin);
+        return err("INVALID_PAYLOAD", "Password pemilik minimal 8 karakter.", 400, origin);
       }
       const visibility: FolderVisibility = body.visibility === "locked" ? "locked" : "public";
       if (visibility === "locked") {
         if (typeof body.visitorPassword !== "string" || body.visitorPassword.length < 8) {
-          return err("INVALID_PAYLOAD", "Password penguncian wajib diisi dan minimal 10 karakter.", 400, origin);
+          return err("INVALID_PAYLOAD", "Password penguncian wajib diisi dan minimal 8 karakter.", 400, origin);
         }
         if (body.visitorPassword === body.ownerPassword) {
           return err("INVALID_PAYLOAD", "Password pemilik dan password penguncian harus berbeda.", 400, origin);
@@ -588,7 +588,7 @@ export async function handle(request: Request, env: Env): Promise<Response> {
         if (visibility === "public") {
           appPatch.pd_lh = null;
           appPatch.pd_ls = null;
-        } else if (typeof body.password === "string" && body.password.length >= 10) {
+        } else if (typeof body.password === "string" && body.password.length >= 8) {
           const sameAsOwner = await verifyPassword(body.password, spaceFolder.appProperties?.pd_os, spaceFolder.appProperties?.pd_oh);
           if (sameAsOwner) return err("INVALID_PAYLOAD", "Password penguncian harus berbeda dari password pemilik.", 400, origin);
           const vSalt = generateSalt();
@@ -596,7 +596,7 @@ export async function handle(request: Request, env: Env): Promise<Response> {
           appPatch.pd_lh = vHash;
           appPatch.pd_ls = vSalt;
         } else if (!hasSeparateVisitorPassword(spaceFolder.appProperties)) {
-          return err("INVALID_PAYLOAD", "Password penguncian baru wajib diisi (minimal 10 karakter).", 400, origin);
+          return err("INVALID_PAYLOAD", "Password penguncian baru wajib diisi (minimal 8 karakter).", 400, origin);
         }
 
         const updated = await updateFileMetadata(env, spaceFolder.id, {
@@ -622,7 +622,7 @@ export async function handle(request: Request, env: Env): Promise<Response> {
           appPatch.pd_lh = null;
           appPatch.pd_ls = null;
         } else {
-          if (typeof body.password === "string" && body.password.length >= 10) {
+          if (typeof body.password === "string" && body.password.length >= 8) {
             const sameAsOwner = await verifyPassword(body.password, spaceFolder.appProperties?.pd_os, spaceFolder.appProperties?.pd_oh);
             if (sameAsOwner) return err("INVALID_PAYLOAD", "Password penguncian harus berbeda dari password pemilik.", 400, origin);
             const subSalt = generateSalt();
@@ -630,7 +630,7 @@ export async function handle(request: Request, env: Env): Promise<Response> {
             appPatch.pd_lh = subHash;
             appPatch.pd_ls = subSalt;
           } else if (!targetFolder.appProperties?.pd_lh || !targetFolder.appProperties?.pd_ls) {
-            return err("INVALID_PAYLOAD", "Password penguncian wajib diisi (minimal 10 karakter).", 400, origin);
+            return err("INVALID_PAYLOAD", "Password penguncian wajib diisi (minimal 8 karakter).", 400, origin);
           }
         }
 
@@ -720,6 +720,15 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       assertOwnerAccess(session, spaceFolder);
 
       const rawPassword = typeof body.password === "string" ? body.password : "";
+      if (rawPassword.length > 0 && rawPassword.length < 8) {
+        return err("INVALID_PAYLOAD", "Password penguncian subfolder minimal 8 karakter.", 400, origin);
+      }
+      if (rawPassword.length > 0) {
+        const sameAsOwner = await verifyPassword(rawPassword, spaceFolder.appProperties?.pd_os, spaceFolder.appProperties?.pd_oh);
+        if (sameAsOwner) {
+          return err("INVALID_PAYLOAD", "Password penguncian harus berbeda dari password pemilik.", 400, origin);
+        }
+      }
       let created: DriveFile;
       if (rawPassword.length > 0) {
         const existing = await listChildren(env, targetParentId);
