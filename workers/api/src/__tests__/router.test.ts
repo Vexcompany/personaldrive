@@ -108,9 +108,13 @@ describe("Personal Drive API router", () => {
     // Create a locked space
     const lockedRes = await req("/spaces", {
       method: "POST",
-      jsonBody: { name: "RahasiaBudi", ownerPassword: "budi-secret", visibility: "locked" },
+      jsonBody: { name: "RahasiaBudi", ownerPassword: "budi-secret", visitorPassword: "budi-visitor", visibility: "locked" },
     });
     expect(lockedRes.status).toBe(201);
+    const missingLockPassword = await req("/spaces", { method: "POST", jsonBody: { name: "NoLock", ownerPassword: "owner-secret", visibility: "locked" } });
+    expect(missingLockPassword.status).toBe(400);
+    const samePasswords = await req("/spaces", { method: "POST", jsonBody: { name: "SamePass", ownerPassword: "same-secret", visitorPassword: "same-secret", visibility: "locked" } });
+    expect(samePasswords.status).toBe(400);
 
     // Anonymous visitor lists spaces
     const listRes = await req("/spaces");
@@ -122,6 +126,10 @@ describe("Personal Drive API router", () => {
     expect(budi.isLocked).toBe(true);
     expect(budi.isUnlocked).toBe(false);
     expect(budi.isOwner).toBe(false);
+    const visitorUnlock = await req("/auth/unlock", { method: "POST", jsonBody: { spaceId: budi.id, password: "budi-visitor" } });
+    expect(visitorUnlock.status).toBe(200);
+    const wrongOwnerAsVisitor = await req("/auth/unlock", { method: "POST", jsonBody: { spaceId: budi.id, password: "budi-secret" } });
+    expect(wrongOwnerAsVisitor.status).toBe(200);
     expect(vex.isLocked).toBe(false);
     expect(vex.isUnlocked).toBe(true);
     expect(vex.isOwner).toBe(false);
