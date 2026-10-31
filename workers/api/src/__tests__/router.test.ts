@@ -157,6 +157,14 @@ describe("Personal Drive API router", () => {
     expect(dlRes.status).toBe(200);
     expect(await dlRes.text()).toBe("Halo Dunia!");
 
+    // Google Drive public permissions are never granted by PersonalDrive.
+    const directShare = await req("/share", {
+      method: "POST",
+      token: ownerToken,
+      jsonBody: { spaceId: space.id, fileId },
+    });
+    expect(directShare.status).toBe(403);
+
     // Anonymous visitor CANNOT upload, create folder, rename, or delete
     const visitorFolder = await req("/folders", {
       method: "POST",
