@@ -61,7 +61,6 @@ export function FolderSecurityModal({
   const [newOwnerPassword, setNewOwnerPassword] = useState("");
 
   const [showVisitorPwSection, setShowVisitorPwSection] = useState(false);
-  const [clearVisitorPw, setClearVisitorPw] = useState(false);
 
   const [showDeleteZone, setShowDeleteZone] = useState(false);
   const [deleteOwnerPassword, setDeleteOwnerPassword] = useState("");
@@ -80,7 +79,6 @@ export function FolderSecurityModal({
       setCurrentOwnerPassword("");
       setNewOwnerPassword("");
       setShowVisitorPwSection(false);
-      setClearVisitorPw(false);
       setShowDeleteZone(false);
       setDeleteOwnerPassword("");
       setError(null);
@@ -114,9 +112,7 @@ export function FolderSecurityModal({
           payload.name = spaceName.trim();
         }
         if (visibility === "locked") {
-          if (clearVisitorPw) {
-            payload.password = "";
-          } else if (password.trim()) {
+          if (password.trim()) {
             payload.password = password;
           }
         }
@@ -310,7 +306,6 @@ export function FolderSecurityModal({
                     value={password}
                     onChange={(e) => {
                       setPassword(e.target.value);
-                      setClearVisitorPw(false);
                     }}
                     placeholder="Password khusus tamu (minimal 8 karakter)…"
                     className="input text-xs"
