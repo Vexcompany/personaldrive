@@ -15,7 +15,6 @@ import {
   createFolder,
   deleteFile,
   ensureFolder,
-  ensurePublicPermission,
   fetchMedia,
   forwardChunk,
   getFile,
@@ -313,12 +312,12 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       if (!body) return err("INVALID_PAYLOAD", "Invalid JSON body.", 400, origin);
 
       const name = validateFolderName(body.name);
-      if (typeof body.ownerPassword !== "string" || body.ownerPassword.length < 10) {
+      if (typeof body.ownerPassword !== "string" || body.ownerPassword.length < 8) {
         return err("INVALID_PAYLOAD", "Password pemilik minimal 10 karakter.", 400, origin);
       }
       const visibility: FolderVisibility = body.visibility === "locked" ? "locked" : "public";
       if (visibility === "locked") {
-        if (typeof body.visitorPassword !== "string" || body.visitorPassword.length < 10) {
+        if (typeof body.visitorPassword !== "string" || body.visitorPassword.length < 8) {
           return err("INVALID_PAYLOAD", "Password penguncian wajib diisi dan minimal 10 karakter.", 400, origin);
         }
         if (body.visitorPassword === body.ownerPassword) {
