@@ -38,7 +38,7 @@ export interface CreateSpaceRequest {
   ownerPassword: string;
   /** Whether visitors can open this space without a password ("public") or need a password ("locked"). */
   visibility: FolderVisibility;
-  /** Optional separate read-only visitor password when locked (defaults to ownerPassword if omitted). */
+  /** Required, separate read-only unlock password when visibility is locked. */
   visitorPassword?: string;
 }
 
@@ -196,7 +196,7 @@ export interface CreateFolderRequest {
   spaceId: string;
   name: string;
   parentId: string | null;
-  /** Optional subfolder password. Empty or omitted = public subfolder. */
+  /** Optional subfolder lock password. Empty or omitted = public subfolder. */
   password?: string;
 }
 
