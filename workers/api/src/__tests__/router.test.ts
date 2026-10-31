@@ -118,16 +118,20 @@ describe("Personal Drive API router", () => {
     const samePasswords = await req("/spaces", { method: "POST", jsonBody: { name: "SamePass", ownerPassword: "same-secret", visitorPassword: "same-secret", visibility: "locked" } });
     expect(samePasswords.status).toBe(400);
 
-    // Anonymous visitor lists spaces
+    // Anonymous visitors can discover the space, but the lock still blocks its contents.
     const listRes = await req("/spaces");
     expect(listRes.status).toBe(200);
-    const listData = (await listRes.json()) as { spaces: Array<{ name: string; isLocked: boolean; isUnlocked: boolean; isOwner: boolean }> };
-    expect(listData.spaces).toHaveLength(1);
-    expect(listData.spaces.map((s) => s.name)).toEqual(["Vex"]);
+    const listData = (await listRes.json()) as { spaces: Array<{ id: string; name: string; isLocked: boolean; isUnlocked: boolean; isOwner: boolean }> };
+    expect(listData.spaces).toHaveLength(2);
+    expect(listData.spaces.map((s) => s.name).sort()).toEqual(["RahasiaBudi", "Vex"]);
     const vex = listData.spaces.find((s) => s.name === "Vex")!;
     expect(vex.isLocked).toBe(false);
     expect(vex.isUnlocked).toBe(true);
     expect(vex.isOwner).toBe(false);
+    const lockedSpace = listData.spaces.find((s) => s.id === budiId)!;
+    expect(lockedSpace.isLocked).toBe(true);
+    expect(lockedSpace.isUnlocked).toBe(false);
+    expect(lockedSpace.isOwner).toBe(false);
     expect((await req(`/files?spaceId=${budiId}`)).status).toBe(403);
 
     const visitorUnlock = await req("/auth/unlock", { method: "POST", jsonBody: { spaceId: budiId, password: "budi-visitor" } });
