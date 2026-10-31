@@ -15,18 +15,17 @@ import {
   createFolder,
   deleteFile,
   ensureFolder,
-  ensurePublicPermission,
   fetchMedia,
   forwardChunk,
   getFile,
   getStorageInfo,
   HttpError,
   listChildren,
-  listPermissions,
   listTrashed,
   moveFile,
   renameFile,
   restoreFile,
+  revokePublicPermissions,
   searchDrive,
   searchTrashed,
   startResumableUpload,
@@ -168,7 +167,7 @@ function toClientFile(f: DriveFile, session: SessionState, spaceFolder: DriveFil
     size: f.size ? Number(f.size) : null,
     parents: f.parents ?? [],
     thumbnailLink: f.thumbnailLink,
-    webViewLink: f.webViewLink,
+    webViewLink: null,
     modifiedTime: f.modifiedTime,
     trashed: f.trashed,
   };
@@ -253,6 +252,27 @@ function assertOwnerAccess(session: SessionState, spaceFolder: DriveFile): void 
   }
 }
 
+async function revokePublicTree(
+  env: Env,
+  folderId: string,
+  depth = 0,
+  state: { visited: number } = { visited: 0 }
+): Promise<void> {
+  if (depth > 20) throwHttp(400, "INVALID_PAYLOAD", "Struktur folder terlalu dalam untuk pengamanan otomatis.");
+  // Revoke the parent first so inherited public permissions disappear before child checks.
+  await revokePublicPermissions(env, folderId);
+  const children = await listChildren(env, folderId);
+  for (const child of children) {
+    if (child.trashed) continue;
+    state.visited += 1;
+    if (state.visited > 1000) throwHttp(413, "INVALID_PAYLOAD", "Folder memiliki lebih dari 1.000 item; penguncian dibatalkan agar tidak meninggalkan tautan publik.");
+    await revokePublicPermissions(env, child.id);
+    if (child.mimeType === "application/vnd.google-apps.folder") {
+      await revokePublicTree(env, child.id, depth + 1, state);
+    }
+  }
+}
+
 function validateBatchIds(body: unknown): string[] {
   if (
     !body ||
@@ -298,7 +318,10 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       const children = await listChildren(env, rootId);
       const spaces = children
         .filter((f) => f.mimeType === "application/vnd.google-apps.folder" && !f.trashed)
-        .map((f) => toSpaceSummary(f, session));
+        .map((f) => toSpaceSummary(f, session))
+        // Private spaces are not enumerable by guests. They remain reachable by a direct
+        // PersonalDrive URL so the visitor can enter the lock password.
+        .filter((space) => !space.isLocked || space.isUnlocked || space.isOwner);
       return json({ spaces }, {}, origin);
     }
 
@@ -313,10 +336,18 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       if (!body) return err("INVALID_PAYLOAD", "Invalid JSON body.", 400, origin);
 
       const name = validateFolderName(body.name);
-      if (typeof body.ownerPassword !== "string" || body.ownerPassword.length < 1) {
-        return err("INVALID_PAYLOAD", "Password pemilik wajib diisi.", 400, origin);
+      if (typeof body.ownerPassword !== "string" || body.ownerPassword.length < 8) {
+        return err("INVALID_PAYLOAD", "Password pemilik minimal 8 karakter.", 400, origin);
       }
       const visibility: FolderVisibility = body.visibility === "locked" ? "locked" : "public";
+      if (visibility === "locked") {
+        if (typeof body.visitorPassword !== "string" || body.visitorPassword.length < 8) {
+          return err("INVALID_PAYLOAD", "Password penguncian wajib diisi dan minimal 8 karakter.", 400, origin);
+        }
+        if (body.visitorPassword === body.ownerPassword) {
+          return err("INVALID_PAYLOAD", "Password pemilik dan password penguncian harus berbeda.", 400, origin);
+        }
+      }
 
       const existing = await listChildren(env, rootId);
       const duplicate = existing.find(
@@ -338,11 +369,7 @@ export async function handle(request: Request, env: Env): Promise<Response> {
         pd_cat: String(Math.floor(Date.now() / 1000)),
       };
 
-      if (
-        visibility === "locked" &&
-        typeof body.visitorPassword === "string" &&
-        body.visitorPassword.trim().length > 0
-      ) {
+      if (visibility === "locked" && typeof body.visitorPassword === "string") {
         const lockSalt = generateSalt();
         const lockHash = await hashPassword(body.visitorPassword, lockSalt);
         appProperties.pd_lh = lockHash;
@@ -565,6 +592,16 @@ export async function handle(request: Request, env: Env): Promise<Response> {
         }
 
         if (typeof body.newOwnerPassword === "string" && body.newOwnerPassword.length > 0) {
+          if (body.newOwnerPassword.length < 8) {
+            return err("INVALID_PAYLOAD", "Password pemilik baru minimal 8 karakter.", 400, origin);
+          }
+          if (body.newOwnerPassword === body.password || await verifyPassword(
+            body.newOwnerPassword,
+            spaceFolder.appProperties?.pd_ls,
+            spaceFolder.appProperties?.pd_lh
+          )) {
+            return err("INVALID_PAYLOAD", "Password pemilik harus berbeda dari password penguncian.", 400, origin);
+          }
           if (typeof body.currentOwnerPassword !== "string" || !body.currentOwnerPassword) {
             return err("INVALID_PAYLOAD", "Masukkan password pemilik saat ini untuk mengganti password.", 400, origin);
           }
@@ -585,19 +622,20 @@ export async function handle(request: Request, env: Env): Promise<Response> {
         if (visibility === "public") {
           appPatch.pd_lh = null;
           appPatch.pd_ls = null;
-        } else if (typeof body.password === "string") {
-          if (body.password.length > 0) {
-            const vSalt = generateSalt();
-            const vHash = await hashPassword(body.password, vSalt);
-            appPatch.pd_lh = vHash;
-            appPatch.pd_ls = vSalt;
-          } else {
-            // Empty string clears separate visitor password so owner password unlocks
-            appPatch.pd_lh = null;
-            appPatch.pd_ls = null;
-          }
+        } else if (typeof body.password === "string" && body.password.length >= 8) {
+          const sameAsOwner = await verifyPassword(body.password, spaceFolder.appProperties?.pd_os, spaceFolder.appProperties?.pd_oh);
+          if (sameAsOwner) return err("INVALID_PAYLOAD", "Password penguncian harus berbeda dari password pemilik.", 400, origin);
+          const vSalt = generateSalt();
+          const vHash = await hashPassword(body.password, vSalt);
+          appPatch.pd_lh = vHash;
+          appPatch.pd_ls = vSalt;
+        } else if (!hasSeparateVisitorPassword(spaceFolder.appProperties)) {
+          return err("INVALID_PAYLOAD", "Password penguncian baru wajib diisi (minimal 8 karakter).", 400, origin);
         }
 
+        if (visibility === "locked") {
+          await revokePublicTree(env, spaceFolder.id);
+        }
         const updated = await updateFileMetadata(env, spaceFolder.id, {
           ...(newName ? { name: newName } : {}),
           appProperties: appPatch,
@@ -621,16 +659,21 @@ export async function handle(request: Request, env: Env): Promise<Response> {
           appPatch.pd_lh = null;
           appPatch.pd_ls = null;
         } else {
-          if (typeof body.password === "string" && body.password.length > 0) {
+          if (typeof body.password === "string" && body.password.length >= 8) {
+            const sameAsOwner = await verifyPassword(body.password, spaceFolder.appProperties?.pd_os, spaceFolder.appProperties?.pd_oh);
+            if (sameAsOwner) return err("INVALID_PAYLOAD", "Password penguncian harus berbeda dari password pemilik.", 400, origin);
             const subSalt = generateSalt();
             const subHash = await hashPassword(body.password, subSalt);
             appPatch.pd_lh = subHash;
             appPatch.pd_ls = subSalt;
           } else if (!targetFolder.appProperties?.pd_lh || !targetFolder.appProperties?.pd_ls) {
-            return err("INVALID_PAYLOAD", "Masukkan password untuk mengunci subfolder ini.", 400, origin);
+            return err("INVALID_PAYLOAD", "Password penguncian wajib diisi (minimal 8 karakter).", 400, origin);
           }
         }
 
+        if (visibility === "locked") {
+          await revokePublicTree(env, targetFolder.id);
+        }
         const updated = await updateFileMetadata(env, targetFolder.id, {
           appProperties: appPatch,
         });
@@ -717,6 +760,15 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       assertOwnerAccess(session, spaceFolder);
 
       const rawPassword = typeof body.password === "string" ? body.password : "";
+      if (rawPassword.length > 0 && rawPassword.length < 8) {
+        return err("INVALID_PAYLOAD", "Password penguncian subfolder minimal 8 karakter.", 400, origin);
+      }
+      if (rawPassword.length > 0) {
+        const sameAsOwner = await verifyPassword(rawPassword, spaceFolder.appProperties?.pd_os, spaceFolder.appProperties?.pd_oh);
+        if (sameAsOwner) {
+          return err("INVALID_PAYLOAD", "Password penguncian harus berbeda dari password pemilik.", 400, origin);
+        }
+      }
       let created: DriveFile;
       if (rawPassword.length > 0) {
         const existing = await listChildren(env, targetParentId);
@@ -1104,7 +1156,7 @@ export async function handle(request: Request, env: Env): Promise<Response> {
           size: file.size ? Number(file.size) : null,
           thumbnailUrl,
           contentUrl,
-          webViewLink: file.webViewLink,
+          webViewLink: null,
           trashed: file.trashed,
         },
         {},
@@ -1181,9 +1233,9 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       assertOwnerAccess(session, spaceFolder);
       const file = chain[chain.length - 1];
       if (file.trashed) return err("ITEM_IN_TRASH", "Tidak dapat membagikan item di Sampah.", 400, origin);
-      const permissions = await listPermissions(env, fileId);
-      const publicPerm = permissions.find((p) => p.type === "anyone" && p.role === "reader");
-      return json({ public: Boolean(publicPerm), role: publicPerm?.role ?? null, webViewLink: file.webViewLink ?? null }, {}, origin);
+      // PersonalDrive links are always proxied through the access-checked app.
+      // Never expose a Google Drive webViewLink as a public sharing URL.
+      return json({ public: false, role: null, webViewLink: null }, {}, origin);
     }
 
     if (path === "/share" && request.method === "POST") {
@@ -1195,8 +1247,15 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       assertOwnerAccess(session, spaceFolder);
       const file = chain[chain.length - 1];
       if (file.trashed) return err("ITEM_IN_TRASH", "Tidak dapat membagikan item di Sampah.", 400, origin);
-      const shared = await ensurePublicPermission(env, body.fileId);
-      return json({ webViewLink: shared.webViewLink }, {}, origin);
+      const appOrigin = request.headers.get("origin");
+      if (!appOrigin) return err("INVALID_PAYLOAD", "Origin website tidak tersedia untuk membuat tautan PersonalDrive.", 400, origin);
+      const base = appOrigin.replace(/\/$/, "");
+      const shareUrl = file.mimeType === "application/vnd.google-apps.folder"
+        ? (file.id === spaceFolder.id
+            ? `${base}/drive?spaceId=${encodeURIComponent(spaceFolder.id)}`
+            : `${base}/drive?spaceId=${encodeURIComponent(spaceFolder.id)}&folderId=${encodeURIComponent(file.id)}`)
+        : `${base}/preview?id=${encodeURIComponent(body.fileId)}&spaceId=${encodeURIComponent(spaceFolder.id)}`;
+      return json({ webViewLink: shareUrl }, {}, origin);
     }
 
     // ── MOVE (Owner only, within same space) ───────────────────────────────

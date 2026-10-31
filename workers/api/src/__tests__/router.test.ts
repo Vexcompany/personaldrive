@@ -108,23 +108,40 @@ describe("Personal Drive API router", () => {
     // Create a locked space
     const lockedRes = await req("/spaces", {
       method: "POST",
-      jsonBody: { name: "RahasiaBudi", ownerPassword: "budi-secret", visibility: "locked" },
+      jsonBody: { name: "RahasiaBudi", ownerPassword: "budi-secret", visitorPassword: "budi-visitor", visibility: "locked" },
     });
     expect(lockedRes.status).toBe(201);
+    const lockedData = (await lockedRes.json()) as { space: { id: string } };
+    const budiId = lockedData.space.id;
+    const missingLockPassword = await req("/spaces", { method: "POST", jsonBody: { name: "NoLock", ownerPassword: "owner-secret", visibility: "locked" } });
+    expect(missingLockPassword.status).toBe(400);
+    const samePasswords = await req("/spaces", { method: "POST", jsonBody: { name: "SamePass", ownerPassword: "same-secret", visitorPassword: "same-secret", visibility: "locked" } });
+    expect(samePasswords.status).toBe(400);
 
     // Anonymous visitor lists spaces
     const listRes = await req("/spaces");
     expect(listRes.status).toBe(200);
     const listData = (await listRes.json()) as { spaces: Array<{ name: string; isLocked: boolean; isUnlocked: boolean; isOwner: boolean }> };
-    expect(listData.spaces).toHaveLength(2);
-    const budi = listData.spaces.find((s) => s.name === "RahasiaBudi")!;
+    expect(listData.spaces).toHaveLength(1);
+    expect(listData.spaces.map((s) => s.name)).toEqual(["Vex"]);
     const vex = listData.spaces.find((s) => s.name === "Vex")!;
-    expect(budi.isLocked).toBe(true);
-    expect(budi.isUnlocked).toBe(false);
-    expect(budi.isOwner).toBe(false);
     expect(vex.isLocked).toBe(false);
     expect(vex.isUnlocked).toBe(true);
     expect(vex.isOwner).toBe(false);
+    expect((await req(`/files?spaceId=${budiId}`)).status).toBe(403);
+
+    const visitorUnlock = await req("/auth/unlock", { method: "POST", jsonBody: { spaceId: budiId, password: "budi-visitor" } });
+    expect(visitorUnlock.status).toBe(200);
+    const visitorData = (await visitorUnlock.json()) as { role: string; session: { token: string } };
+    expect(visitorData.role).toBe("viewer");
+    const unlockedList = await req("/spaces", { token: visitorData.session.token });
+    const unlockedSpaces = (await unlockedList.json()) as { spaces: Array<{ name: string }> };
+    expect(unlockedSpaces.spaces.map((s) => s.name)).toContain("RahasiaBudi");
+
+    const ownerLogin = await req("/auth/unlock", { method: "POST", jsonBody: { spaceId: budiId, password: "budi-secret", asOwner: true } });
+    expect(ownerLogin.status).toBe(200);
+    const ownerData = (await ownerLogin.json()) as { role: string };
+    expect(ownerData.role).toBe("owner");
   });
 
   it("enforces Read-Only on public spaces for visitors while allowing Owner full control", async () => {
@@ -148,6 +165,17 @@ describe("Personal Drive API router", () => {
     const dlRes = await req(`/download?id=${fileId}`);
     expect(dlRes.status).toBe(200);
     expect(await dlRes.text()).toBe("Halo Dunia!");
+
+    // Google Drive public permissions are never granted by PersonalDrive.
+    const directShare = await req("/share", {
+      method: "POST",
+      token: ownerToken,
+      headers: { Origin: "https://drive.example" },
+      jsonBody: { spaceId: space.id, fileId },
+    });
+    expect(directShare.status).toBe(200);
+    const directShareData = (await directShare.json()) as { webViewLink: string };
+    expect(directShareData.webViewLink).toBe(`https://drive.example/preview?id=${fileId}&spaceId=${space.id}`);
 
     // Anonymous visitor CANNOT upload, create folder, rename, or delete
     const visitorFolder = await req("/folders", {

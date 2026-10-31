@@ -61,7 +61,6 @@ export function FolderSecurityModal({
   const [newOwnerPassword, setNewOwnerPassword] = useState("");
 
   const [showVisitorPwSection, setShowVisitorPwSection] = useState(false);
-  const [clearVisitorPw, setClearVisitorPw] = useState(false);
 
   const [showDeleteZone, setShowDeleteZone] = useState(false);
   const [deleteOwnerPassword, setDeleteOwnerPassword] = useState("");
@@ -80,7 +79,6 @@ export function FolderSecurityModal({
       setCurrentOwnerPassword("");
       setNewOwnerPassword("");
       setShowVisitorPwSection(false);
-      setClearVisitorPw(false);
       setShowDeleteZone(false);
       setDeleteOwnerPassword("");
       setError(null);
@@ -114,9 +112,7 @@ export function FolderSecurityModal({
           payload.name = spaceName.trim();
         }
         if (visibility === "locked") {
-          if (clearVisitorPw) {
-            payload.password = "";
-          } else if (password.trim()) {
+          if (password.trim()) {
             payload.password = password;
           }
         }
@@ -268,6 +264,8 @@ export function FolderSecurityModal({
                       : "Masukkan password untuk subfolder ini…"
                   }
                   className="input pr-10"
+                  minLength={8}
+                  autoComplete="new-password"
                 />
                 <button
                   type="button"
@@ -289,10 +287,7 @@ export function FolderSecurityModal({
                 onClick={() => setShowVisitorPwSection((v) => !v)}
                 className="w-full flex items-center justify-between text-xs font-medium text-slate-700"
               >
-                <span>
-                  Password Khusus Tamu Read-Only{" "}
-                  {space.hasVisitorPassword ? "(Aktif)" : "(Opsional)"}
-                </span>
+                <span>Password Penguncian (Read-Only)</span>
                 {showVisitorPwSection ? (
                   <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
                 ) : (
@@ -301,35 +296,23 @@ export function FolderSecurityModal({
               </button>
               {!showVisitorPwSection && (
                 <p className="text-[11px] text-slate-500">
-                  Secara default ruang terkunci dibuka memakai Password Pemilik. Kamu juga bisa mengatur password terpisah khusus tamu (hanya lihat & download).
+                  Atur password khusus untuk membuka ruang ini. Password pemilik tetap terpisah dan hanya memberikan hak pengelolaan.
                 </p>
               )}
               {showVisitorPwSection && (
                 <div className="space-y-2 pt-1">
                   <input
-                    type={showPw ? "text" : "password"}
+                    type="password"
                     value={password}
                     onChange={(e) => {
                       setPassword(e.target.value);
-                      setClearVisitorPw(false);
                     }}
-                    placeholder="Password khusus tamu (Read-Only)…"
+                    placeholder="Password khusus tamu (minimal 8 karakter)…"
                     className="input text-xs"
+                    minLength={8}
+                    autoComplete="new-password"
                   />
-                  {space.hasVisitorPassword && (
-                    <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={clearVisitorPw}
-                        onChange={(e) => {
-                          setClearVisitorPw(e.target.checked);
-                          if (e.target.checked) setPassword("");
-                        }}
-                        className="accent-brand-500 rounded"
-                      />
-                      Hapus password tamu (hanya gunakan Password Pemilik)
-                    </label>
-                  )}
+
                 </div>
               )}
             </div>
@@ -363,8 +346,10 @@ export function FolderSecurityModal({
                     type="password"
                     value={newOwnerPassword}
                     onChange={(e) => setNewOwnerPassword(e.target.value)}
-                    placeholder="Password Pemilik baru"
+                    placeholder="Password Pemilik baru (minimal 8 karakter)"
                     className="input text-xs"
+                    minLength={8}
+                    autoComplete="new-password"
                   />
                 </div>
               )}
