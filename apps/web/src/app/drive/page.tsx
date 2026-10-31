@@ -84,21 +84,7 @@ type ViewMode = "grid" | "list";
 type SortKey = "name" | "modified" | "size" | "type";
 type SortDir = "asc" | "desc";
 
-const VIEW_KEY = "personaldrive.view";
-const SORT_KEY = "personaldrive.sortKey";
-const SORT_DIR_KEY = "personaldrive.sortDir";
 const SCROLL_KEY = "personaldrive.scrollY";
-const RECENT_SEARCH_KEY = "personaldrive.recentSearches";
-
-function readLocal<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw === null ? fallback : (raw as unknown as T);
-  } catch {
-    return fallback;
-  }
-}
 
 export default function DrivePage() {
   return (
@@ -162,42 +148,24 @@ function DriveInner() {
   const [searching, setSearching] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
 
-  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = window.localStorage.getItem(RECENT_SEARCH_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
   function saveRecentSearch(q: string) {
     const trimmed = q.trim();
     if (!trimmed) return;
     setRecentSearches((prev) => {
       const next = [trimmed, ...prev.filter((s) => s.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
-      try {
-        window.localStorage.setItem(RECENT_SEARCH_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
+       return next;
     });
   }
 
   function clearRecentSearches() {
     setRecentSearches([]);
-    try {
-      window.localStorage.removeItem(RECENT_SEARCH_KEY);
-    } catch {
-      /* ignore */
-    }
-  }
+   }
 
-  const [view, setView] = useState<ViewMode>(() => readLocal<ViewMode>(VIEW_KEY, "list"));
-  const [sortKey, setSortKey] = useState<SortKey>(() => readLocal<SortKey>(SORT_KEY, "name"));
-  const [sortDir, setSortDir] = useState<SortDir>(() => readLocal<SortDir>(SORT_DIR_KEY, "asc"));
+  const [view, setView] = useState<ViewMode>("list");
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [showSortMenu, setShowSortMenu] = useState(false);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -399,17 +367,7 @@ function DriveInner() {
     }
   }, []);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(VIEW_KEY, view);
-      window.localStorage.setItem(SORT_KEY, sortKey);
-      window.localStorage.setItem(SORT_DIR_KEY, sortDir);
-    } catch {
-      /* ignore */
-    }
-  }, [view, sortKey, sortDir]);
-
-  useEffect(() => {
+   useEffect(() => {
     if (!spaceId) return;
     const q = query.trim();
     if (!q) {

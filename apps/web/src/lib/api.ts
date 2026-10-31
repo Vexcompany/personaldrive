@@ -114,7 +114,7 @@ export const TOKEN_KEY = "personaldrive.token";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
+  return window.localStorage.getItem(TOKEN_KEY) || window.sessionStorage.getItem(TOKEN_KEY);
 }
 
 export function authHeaders(): Record<string, string> {
