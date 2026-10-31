@@ -35,25 +35,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const applySession = useCallback((session: SessionInfo) => {
+    const nextToken = session.token || null;
+    const claims = parseTokenClaimsClient(nextToken);
+    const owned = session.ownedSpaceIds ?? claims.owned;
+    const unlocked = session.unlockedFolderIds ?? claims.unlocked;
     if (typeof window !== "undefined") {
-      if (session.token) {
-        window.localStorage.setItem(TOKEN_KEY, session.token);
-      } else {
-        window.localStorage.removeItem(TOKEN_KEY);
+      window.localStorage.removeItem(TOKEN_KEY);
+      window.sessionStorage.removeItem(TOKEN_KEY);
+      if (nextToken) {
+        if (owned.length > 0) {
+          window.localStorage.setItem(TOKEN_KEY, nextToken);
+        } else {
+          window.sessionStorage.setItem(TOKEN_KEY, nextToken);
+        }
       }
     }
-    setToken(session.token || null);
-    setOwnedSpaceIds(session.ownedSpaceIds ?? []);
-    setUnlockedFolderIds(session.unlockedFolderIds ?? []);
+    setToken(nextToken);
+    setOwnedSpaceIds(owned);
+    setUnlockedFolderIds(unlocked);
   }, []);
 
   useEffect(() => {
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem(TOKEN_KEY) : null;
-    if (stored) {
-      const parsed = parseTokenClaimsClient(stored);
-      setToken(stored);
-      setOwnedSpaceIds(parsed.owned);
-      setUnlockedFolderIds(parsed.unlocked);
+    if (typeof window !== "undefined") {
+      const persistentToken = window.localStorage.getItem(TOKEN_KEY);
+      const temporaryToken = window.sessionStorage.getItem(TOKEN_KEY);
+      if (persistentToken) {
+        const parsed = parseTokenClaimsClient(persistentToken);
+        if (parsed.owned.length > 0) {
+          setToken(persistentToken);
+          setOwnedSpaceIds(parsed.owned);
+          setUnlockedFolderIds(parsed.unlocked);
+        } else {
+          window.localStorage.removeItem(TOKEN_KEY);
+          window.sessionStorage.setItem(TOKEN_KEY, persistentToken);
+          setToken(persistentToken);
+          setOwnedSpaceIds([]);
+          setUnlockedFolderIds(parsed.unlocked);
+        }
+      } else if (temporaryToken) {
+        const parsed = parseTokenClaimsClient(temporaryToken);
+        setToken(temporaryToken);
+        setOwnedSpaceIds(parsed.owned);
+        setUnlockedFolderIds(parsed.unlocked);
+      }
     }
     setLoading(false);
   }, []);
