@@ -261,6 +261,8 @@ async function revokePublicTree(
   if (depth > 20) throwHttp(400, "INVALID_PAYLOAD", "Struktur folder terlalu dalam untuk pengamanan otomatis.");
   state.visited += 1;
   if (state.visited > 1000) throwHttp(413, "INVALID_PAYLOAD", "Folder memiliki lebih dari 1.000 item; penguncian dibatalkan agar tidak meninggalkan tautan publik.");
+  // Revoke the parent first so inherited public permissions disappear before child checks.
+  await revokePublicPermissions(env, folderId);
   const children = await listChildren(env, folderId);
   for (const child of children) {
     if (child.trashed) continue;
@@ -271,7 +273,6 @@ async function revokePublicTree(
       await revokePublicTree(env, child.id, depth + 1, state);
     }
   }
-  await revokePublicPermissions(env, folderId);
 }
 
 function validateBatchIds(body: unknown): string[] {
