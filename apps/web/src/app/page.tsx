@@ -511,7 +511,7 @@ export default function HomePage() {
                   type={showNewPw ? "text" : "password"}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Buat password pemilik (minimal 10 karakter)…"
+                  placeholder="Buat password pemilik (minimal 8 karakter)…"
                   className="input pr-10"
                   minLength={8}
                   autoComplete="new-password"
@@ -539,7 +539,7 @@ export default function HomePage() {
                   type="password"
                   value={newLockPassword}
                   onChange={(e) => setNewLockPassword(e.target.value)}
-                  placeholder="Password untuk membuka folder (minimal 10 karakter)…"
+                  placeholder="Password untuk membuka folder (minimal 8 karakter)…"
                   className="input"
                   minLength={8}
                   autoComplete="new-password"
