@@ -20,6 +20,7 @@ export interface JwtPayload {
 
 const encoder = new TextEncoder();
 const MAX_ENTRIES = 60;
+const DEFAULT_SESSION_TTL_SECONDS = 12 * 60 * 60;
 
 function trimMap(map: Record<string, string> | undefined): Record<string, string> {
   if (!map) return {};
@@ -41,7 +42,7 @@ async function importKey(secret: string): Promise<CryptoKey> {
 export async function signJwt(
   payload: Omit<JwtPayload, "iat" | "exp">,
   secret: string,
-  ttlSeconds?: number
+  ttlSeconds: number = DEFAULT_SESSION_TTL_SECONDS
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const full: JwtPayload = {
@@ -83,7 +84,15 @@ export async function verifyJwt(token: string, secret: string): Promise<JwtPaylo
   if (!ok) return null;
   try {
     const payload = JSON.parse(new TextDecoder().decode(b64urlDecode(payloadB64))) as JwtPayload;
-    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return null;
+    if (
+      typeof payload.iat !== "number" ||
+      !Number.isFinite(payload.iat) ||
+      payload.iat > Math.floor(Date.now() / 1000) + 60 ||
+      typeof payload.exp !== "number" ||
+      !Number.isFinite(payload.exp) ||
+      payload.exp <= Math.floor(Date.now() / 1000) ||
+      payload.exp <= payload.iat
+    ) return null;
     return {
       ...payload,
       owned: payload.owned && typeof payload.owned === "object" ? payload.owned : {},
