@@ -21,7 +21,6 @@ import {
   getStorageInfo,
   HttpError,
   listChildren,
-  listPermissions,
   listTrashed,
   moveFile,
   renameFile,
@@ -1222,9 +1221,9 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       assertOwnerAccess(session, spaceFolder);
       const file = chain[chain.length - 1];
       if (file.trashed) return err("ITEM_IN_TRASH", "Tidak dapat membagikan item di Sampah.", 400, origin);
-      const permissions = await listPermissions(env, fileId);
-      const publicPerm = permissions.find((p) => p.type === "anyone" && p.role === "reader");
-      return json({ public: Boolean(publicPerm), role: publicPerm?.role ?? null, webViewLink: file.webViewLink ?? null }, {}, origin);
+      // PersonalDrive links are always proxied through the access-checked app.
+      // Never expose a Google Drive webViewLink as a public sharing URL.
+      return json({ public: false, role: null, webViewLink: null }, {}, origin);
     }
 
     if (path === "/share" && request.method === "POST") {
@@ -1236,7 +1235,10 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       assertOwnerAccess(session, spaceFolder);
       const file = chain[chain.length - 1];
       if (file.trashed) return err("ITEM_IN_TRASH", "Tidak dapat membagikan item di Sampah.", 400, origin);
-      return err("FORBIDDEN", "Berbagi langsung melalui Google Drive dinonaktifkan agar penguncian PersonalDrive tidak bisa dilewati. Ubah folder menjadi Publik untuk membagikan isinya.", 403, origin);
+      const appOrigin = request.headers.get("origin");
+      if (!appOrigin) return err("INVALID_PAYLOAD", "Origin website tidak tersedia untuk membuat tautan PersonalDrive.", 400, origin);
+      const shareUrl = `${appOrigin.replace(/\/$/, "")}/preview?id=${encodeURIComponent(body.fileId)}`;
+      return json({ webViewLink: shareUrl }, {}, origin);
     }
 
     // ── MOVE (Owner only, within same space) ───────────────────────────────
