@@ -50,6 +50,7 @@ export default function HomePage() {
   const [newName, setNewName] = useState("");
   const [newVisibility, setNewVisibility] = useState<FolderVisibility>("locked");
   const [newPassword, setNewPassword] = useState("");
+  const [newLockPassword, setNewLockPassword] = useState("");
   const [showNewPw, setShowNewPw] = useState(false);
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -104,6 +105,7 @@ export default function HomePage() {
     setNewName("");
     setNewVisibility("locked");
     setNewPassword("");
+    setNewLockPassword("");
     setShowNewPw(false);
     setCreateError(null);
     setCreateBusy(false);
@@ -111,13 +113,18 @@ export default function HomePage() {
 
   async function handleCreateSpace(e: React.FormEvent) {
     e.preventDefault();
-    if (!newName.trim() || !newPassword || createBusy) return;
+    if (!newName.trim() || newPassword.length < 10 || (newVisibility === "locked" && newLockPassword.length < 10) || createBusy) return;
+    if (newVisibility === "locked" && newPassword === newLockPassword) {
+      setCreateError("Password pemilik dan password penguncian harus berbeda.");
+      return;
+    }
     setCreateBusy(true);
     setCreateError(null);
     try {
       const res = await createSpace({
         name: newName.trim(),
         ownerPassword: newPassword,
+        visitorPassword: newVisibility === "locked" ? newLockPassword : undefined,
         visibility: newVisibility,
       });
       setCreateOpen(false);
@@ -496,9 +503,7 @@ export default function HomePage() {
 
             <div>
               <label className="label" htmlFor="new-space-pw">
-                {newVisibility === "locked"
-                  ? "Password Folder & Pemilik"
-                  : "Password Pemilik (untuk Upload & Kelola)"}
+                Password Pemilik (untuk Upload & Kelola)
               </label>
               <div className="relative">
                 <input
@@ -506,8 +511,10 @@ export default function HomePage() {
                   type={showNewPw ? "text" : "password"}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Buat password milikmu…"
+                  placeholder="Buat password pemilik (minimal 10 karakter)…"
                   className="input pr-10"
+                  minLength={10}
+                  autoComplete="new-password"
                   required
                 />
                 <button
@@ -520,11 +527,29 @@ export default function HomePage() {
                 </button>
               </div>
               <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">
-                {newVisibility === "locked"
-                  ? "Simpan password ini — dipakai untuk membuka folder sekaligus upload/menghapus file dari HP atau laptop mana pun."
-                  : "Pengunjung tidak butuh password untuk melihat & download, sedangkan kamu memakai password ini saat ingin upload atau mengedit isi folder."}
+                Password ini hanya untuk membuktikan kepemilikan dan mengelola folder.
               </p>
             </div>
+
+            {newVisibility === "locked" && (
+              <div>
+                <label className="label" htmlFor="new-space-lock-pw">Password Penguncian Folder</label>
+                <input
+                  id="new-space-lock-pw"
+                  type="password"
+                  value={newLockPassword}
+                  onChange={(e) => setNewLockPassword(e.target.value)}
+                  placeholder="Password untuk membuka folder (minimal 10 karakter)…"
+                  className="input"
+                  minLength={10}
+                  autoComplete="new-password"
+                  required
+                />
+                <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">
+                  Password ini terpisah dari password pemilik. Pengunjung hanya bisa membaca dan mengunduh setelah membukanya.
+                </p>
+              </div>
+            )}
 
             {createError && (
               <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
@@ -541,7 +566,7 @@ export default function HomePage() {
                 type="submit"
                 variant="primary"
                 loading={createBusy}
-                disabled={!newName.trim() || !newPassword}
+                disabled={!newName.trim() || newPassword.length < 10 || (newVisibility === "locked" && newLockPassword.length < 10) || (newVisibility === "locked" && newPassword === newLockPassword)}
               >
                 <FolderPlus className="h-4 w-4" />
                 Buat Folder
