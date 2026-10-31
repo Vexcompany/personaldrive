@@ -113,7 +113,7 @@ export default function HomePage() {
 
   async function handleCreateSpace(e: React.FormEvent) {
     e.preventDefault();
-    if (!newName.trim() || newPassword.length < 10 || (newVisibility === "locked" && newLockPassword.length < 10) || createBusy) return;
+    if (!newName.trim() || newPassword.length < 8 || (newVisibility === "locked" && newLockPassword.length < 8) || createBusy) return;
     if (newVisibility === "locked" && newPassword === newLockPassword) {
       setCreateError("Password pemilik dan password penguncian harus berbeda.");
       return;
@@ -513,7 +513,7 @@ export default function HomePage() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Buat password pemilik (minimal 10 karakter)…"
                   className="input pr-10"
-                  minLength={10}
+                  minLength={8}
                   autoComplete="new-password"
                   required
                 />
@@ -541,7 +541,7 @@ export default function HomePage() {
                   onChange={(e) => setNewLockPassword(e.target.value)}
                   placeholder="Password untuk membuka folder (minimal 10 karakter)…"
                   className="input"
-                  minLength={10}
+                  minLength={8}
                   autoComplete="new-password"
                   required
                 />
@@ -566,7 +566,7 @@ export default function HomePage() {
                 type="submit"
                 variant="primary"
                 loading={createBusy}
-                disabled={!newName.trim() || newPassword.length < 10 || (newVisibility === "locked" && newLockPassword.length < 10) || (newVisibility === "locked" && newPassword === newLockPassword)}
+                disabled={!newName.trim() || newPassword.length < 8 || (newVisibility === "locked" && newLockPassword.length < 8) || (newVisibility === "locked" && newPassword === newLockPassword)}
               >
                 <FolderPlus className="h-4 w-4" />
                 Buat Folder
