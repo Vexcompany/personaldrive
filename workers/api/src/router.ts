@@ -26,6 +26,7 @@ import {
   moveFile,
   renameFile,
   restoreFile,
+  revokePublicPermissions,
   searchDrive,
   searchTrashed,
   startResumableUpload,
@@ -250,6 +251,28 @@ function assertOwnerAccess(session: SessionState, spaceFolder: DriveFile): void 
       "Akses ditolak. Masuk menggunakan Password Pemilik untuk mengupload atau mengubah isi folder."
     );
   }
+}
+
+async function revokePublicTree(
+  env: Env,
+  folderId: string,
+  depth = 0,
+  state: { visited: number } = { visited: 0 }
+): Promise<void> {
+  if (depth > 20) throwHttp(400, "INVALID_PAYLOAD", "Struktur folder terlalu dalam untuk pengamanan otomatis.");
+  state.visited += 1;
+  if (state.visited > 1000) throwHttp(413, "INVALID_PAYLOAD", "Folder memiliki lebih dari 1.000 item; penguncian dibatalkan agar tidak meninggalkan tautan publik.");
+  const children = await listChildren(env, folderId);
+  for (const child of children) {
+    if (child.trashed) continue;
+    state.visited += 1;
+    if (state.visited > 1000) throwHttp(413, "INVALID_PAYLOAD", "Folder memiliki lebih dari 1.000 item; penguncian dibatalkan agar tidak meninggalkan tautan publik.");
+    await revokePublicPermissions(env, child.id);
+    if (child.mimeType === "application/vnd.google-apps.folder") {
+      await revokePublicTree(env, child.id, depth + 1, state);
+    }
+  }
+  await revokePublicPermissions(env, folderId);
 }
 
 function validateBatchIds(body: unknown): string[] {
@@ -599,6 +622,9 @@ export async function handle(request: Request, env: Env): Promise<Response> {
           return err("INVALID_PAYLOAD", "Password penguncian baru wajib diisi (minimal 8 karakter).", 400, origin);
         }
 
+        if (visibility === "locked") {
+          await revokePublicTree(env, spaceFolder.id);
+        }
         const updated = await updateFileMetadata(env, spaceFolder.id, {
           ...(newName ? { name: newName } : {}),
           appProperties: appPatch,
@@ -634,6 +660,9 @@ export async function handle(request: Request, env: Env): Promise<Response> {
           }
         }
 
+        if (visibility === "locked") {
+          await revokePublicTree(env, targetFolder.id);
+        }
         const updated = await updateFileMetadata(env, targetFolder.id, {
           appProperties: appPatch,
         });
