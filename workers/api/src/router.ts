@@ -316,12 +316,12 @@ export async function handle(request: Request, env: Env): Promise<Response> {
     // GET /spaces — list all people's spaces on the home page
     if (path === "/spaces" && request.method === "GET") {
       const children = await listChildren(env, rootId);
+      // Always show top-level spaces in the directory, including password-locked ones.
+      // Visibility controls entry/content access, not whether the folder exists in the listing.
+      // Locked spaces are still protected by assertReadAccess and the /auth/unlock password gate.
       const spaces = children
         .filter((f) => f.mimeType === "application/vnd.google-apps.folder" && !f.trashed)
-        .map((f) => toSpaceSummary(f, session))
-        // Private spaces are not enumerable by guests. They remain reachable by a direct
-        // PersonalDrive URL so the visitor can enter the lock password.
-        .filter((space) => !space.isLocked || space.isUnlocked || space.isOwner);
+        .map((f) => toSpaceSummary(f, session));
       return json({ spaces }, {}, origin);
     }
 
