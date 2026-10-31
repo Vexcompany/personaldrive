@@ -398,6 +398,27 @@ export async function startResumableUpload(
   return { sessionUri, totalBytes: args.size };
 }
 
+/**
+ * A resumable upload URL is a bearer capability. Never forward Google's
+ * OAuth access token to a caller-controlled host or follow redirects from it.
+ */
+export function isValidGoogleUploadSessionUri(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      url.hostname === "www.googleapis.com" &&
+      url.port === "" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.pathname === "/upload/drive/v3/files" &&
+      url.searchParams.has("upload_id")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function forwardChunk(
   env: Env,
   args: {
@@ -410,9 +431,25 @@ export async function forwardChunk(
   }
 ): Promise<{ acknowledged: number; finished: boolean; driveFileId: string | null }> {
   if (isMock(env)) return mockDrive.forwardChunk(args);
+  if (!isValidGoogleUploadSessionUri(args.sessionUri)) {
+    throw new HttpError(400, "INVALID_PAYLOAD", "Invalid Google Drive resumable upload session URL.");
+  }
+  if (
+    !Number.isSafeInteger(args.start) ||
+    !Number.isSafeInteger(args.end) ||
+    !Number.isSafeInteger(args.total) ||
+    args.start < 0 ||
+    args.end <= args.start ||
+    args.total <= 0 ||
+    args.end > args.total ||
+    args.body.byteLength !== args.end - args.start
+  ) {
+    throw new HttpError(400, "INVALID_PAYLOAD", "Invalid upload chunk range or body length.");
+  }
   const token = await getAccessToken(env);
   const res = await fetch(args.sessionUri, {
     method: "PUT",
+    redirect: "manual",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": args.mimeType,
