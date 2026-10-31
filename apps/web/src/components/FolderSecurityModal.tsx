@@ -291,10 +291,7 @@ export function FolderSecurityModal({
                 onClick={() => setShowVisitorPwSection((v) => !v)}
                 className="w-full flex items-center justify-between text-xs font-medium text-slate-700"
               >
-                <span>
-                  Password Khusus Tamu Read-Only{" "}
-                  {space.hasVisitorPassword ? "(Aktif)" : "(Opsional)"}
-                </span>
+                <span>Password Penguncian (Read-Only)</span>
                 {showVisitorPwSection ? (
                   <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
                 ) : (
@@ -303,7 +300,7 @@ export function FolderSecurityModal({
               </button>
               {!showVisitorPwSection && (
                 <p className="text-[11px] text-slate-500">
-                  Secara default ruang terkunci dibuka memakai Password Pemilik. Kamu juga bisa mengatur password terpisah khusus tamu (hanya lihat & download).
+                  Atur password khusus untuk membuka ruang ini. Password pemilik tetap terpisah dan hanya memberikan hak pengelolaan.
                 </p>
               )}
               {showVisitorPwSection && (
@@ -320,20 +317,7 @@ export function FolderSecurityModal({
                     minLength={8}
                     autoComplete="new-password"
                   />
-                  {space.hasVisitorPassword && (
-                    <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={clearVisitorPw}
-                        onChange={(e) => {
-                          setClearVisitorPw(e.target.checked);
-                          if (e.target.checked) setPassword("");
-                        }}
-                        className="accent-brand-500 rounded"
-                      />
-                      Hapus password tamu (hanya gunakan Password Pemilik)
-                    </label>
-                  )}
+
                 </div>
               )}
             </div>
