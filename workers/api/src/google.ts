@@ -466,6 +466,7 @@ export async function forwardChunk(
         if (acknowledged >= args.total) {
           const finalRes = await fetch(args.sessionUri, {
             method: "PUT",
+            redirect: "manual",
             headers: {
               Authorization: `Bearer ${token}`,
               "Content-Range": `bytes */${args.total}`,
