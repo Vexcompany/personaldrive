@@ -592,6 +592,16 @@ export async function handle(request: Request, env: Env): Promise<Response> {
         }
 
         if (typeof body.newOwnerPassword === "string" && body.newOwnerPassword.length > 0) {
+          if (body.newOwnerPassword.length < 8) {
+            return err("INVALID_PAYLOAD", "Password pemilik baru minimal 8 karakter.", 400, origin);
+          }
+          if (body.newOwnerPassword === body.password || await verifyPassword(
+            body.newOwnerPassword,
+            spaceFolder.appProperties?.pd_ls,
+            spaceFolder.appProperties?.pd_lh
+          )) {
+            return err("INVALID_PAYLOAD", "Password pemilik harus berbeda dari password penguncian.", 400, origin);
+          }
           if (typeof body.currentOwnerPassword !== "string" || !body.currentOwnerPassword) {
             return err("INVALID_PAYLOAD", "Masukkan password pemilik saat ini untuk mengganti password.", 400, origin);
           }
