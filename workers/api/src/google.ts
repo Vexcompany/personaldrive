@@ -165,11 +165,23 @@ export async function listChildren(env: Env, folderId: string | null, includeTra
   if (isMock(env)) return mockDrive.listChildren(mockRoot(env), folderId, includeTrashed);
   const trashedFilter = includeTrashed ? "" : " and trashed=false";
   const q = folderId ? `'${folderId}' in parents${trashedFilter}` : `'root' in parents${trashedFilter}`;
-  const url = `${DRIVE_API}/files?q=${encodeURIComponent(q)}&fields=${FILE_FIELDS}&pageSize=1000&orderBy=folder,name`;
-  const res = await authedFetch(url, { method: "GET" }, env);
-  if (!res.ok) throw new HttpError(res.status, "DRIVE_ERROR", await res.text());
-  const data = (await res.json()) as { files: DriveFile[] };
-  return data.files ?? [];
+  const files: DriveFile[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      q,
+      fields: FILE_FIELDS,
+      pageSize: "1000",
+      orderBy: "folder,name",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await authedFetch(`${DRIVE_API}/files?${params.toString()}`, { method: "GET" }, env);
+    if (!res.ok) throw new HttpError(res.status, "DRIVE_ERROR", await res.text());
+    const data = (await res.json()) as { files?: DriveFile[]; nextPageToken?: string };
+    files.push(...(data.files ?? []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+  return files;
 }
 
 export async function getFile(env: Env, fileId: string): Promise<DriveFile> {
@@ -283,21 +295,30 @@ export interface PermissionInfo {
 
 export async function listPermissions(env: Env, fileId: string): Promise<PermissionInfo[]> {
   if (isMock(env)) return mockDrive.listPermissions(mockRoot(env), fileId);
-  const res = await authedFetch(
-    `${DRIVE_API}/files/${encodeURIComponent(fileId)}/permissions?fields=permissions(id,type,role,allowFileDiscovery)`,
-    { method: "GET" },
-    env
-  );
-  if (!res.ok) throw new HttpError(res.status, "DRIVE_ERROR", await res.text());
-  const data = (await res.json()) as {
-    permissions?: Array<{ id?: string; type?: string; role?: string; allowFileDiscovery?: boolean }>;
-  };
-  return (data.permissions ?? []).map((p) => ({
-    id: p.id ?? null,
-    type: p.type ?? null,
-    role: p.role ?? null,
-    allowFileDiscovery: p.allowFileDiscovery ?? null,
-  }));
+  const permissions: PermissionInfo[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({ fields: "permissions(id,type,role,allowFileDiscovery)", pageSize: "100" });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await authedFetch(
+      `${DRIVE_API}/files/${encodeURIComponent(fileId)}/permissions?${params.toString()}`,
+      { method: "GET" },
+      env
+    );
+    if (!res.ok) throw new HttpError(res.status, "DRIVE_ERROR", await res.text());
+    const data = (await res.json()) as {
+      permissions?: Array<{ id?: string; type?: string; role?: string; allowFileDiscovery?: boolean }>;
+      nextPageToken?: string;
+    };
+    permissions.push(...(data.permissions ?? []).map((p) => ({
+      id: p.id ?? null,
+      type: p.type ?? null,
+      role: p.role ?? null,
+      allowFileDiscovery: p.allowFileDiscovery ?? null,
+    })));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+  return permissions;
 }
 
 export async function revokePublicPermissions(env: Env, fileId: string): Promise<void> {
