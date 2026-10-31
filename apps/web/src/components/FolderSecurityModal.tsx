@@ -309,18 +309,14 @@ export function FolderSecurityModal({
               {showVisitorPwSection && (
                 <div className="space-y-2 pt-1">
                   <input
-                    type={showPw ? "text" : "password"}
+                    type="password"
                     value={password}
                     onChange={(e) => {
                       setPassword(e.target.value);
                       setClearVisitorPw(false);
                     }}
-                    placeholder="Password khusus tamu (Read-Only)…"
+                    placeholder="Password khusus tamu (minimal 8 karakter)…"
                     className="input text-xs"
-                  minLength={8}
-                  autoComplete="new-password"
-                    minLength={8}
-                    autoComplete="new-password"
                     minLength={8}
                     autoComplete="new-password"
                   />
@@ -371,8 +367,10 @@ export function FolderSecurityModal({
                     type="password"
                     value={newOwnerPassword}
                     onChange={(e) => setNewOwnerPassword(e.target.value)}
-                    placeholder="Password Pemilik baru"
+                    placeholder="Password Pemilik baru (minimal 8 karakter)"
                     className="input text-xs"
+                    minLength={8}
+                    autoComplete="new-password"
                   />
                 </div>
               )}
