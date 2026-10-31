@@ -454,7 +454,7 @@ function DriveInner() {
 
   async function createFolder(e?: React.FormEvent) {
     if (e) e.preventDefault();
-    if (!spaceId || !newFolderName.trim() || newFolderBusy) return;
+    if (!spaceId || !newFolderName.trim() || newFolderBusy || (newFolderPassword.length > 0 && newFolderPassword.length < 8)) return;
     setNewFolderBusy(true);
     try {
       const pw = newFolderPassword;
@@ -1635,7 +1635,7 @@ function DriveInner() {
 
             <div>
               <label className="label" htmlFor="new-subfolder-pw">
-                Password Subfolder <span className="text-slate-400 font-normal">(opsional)</span>
+                Password Penguncian Subfolder <span className="text-slate-400 font-normal">(opsional, minimal 8 karakter)</span>
               </label>
               <div className="relative">
                 <input
@@ -1645,6 +1645,8 @@ function DriveInner() {
                   onChange={(e) => setNewFolderPassword(e.target.value)}
                   placeholder="Kosongkan jika publik…"
                   className="input pr-10"
+                  minLength={8}
+                  autoComplete="new-password"
                 />
                 <button
                   type="button"
@@ -1666,7 +1668,7 @@ function DriveInner() {
               <Button type="button" variant="ghost" onClick={() => setShowNewFolder(false)}>
                 Batal
               </Button>
-              <Button type="submit" variant="primary" loading={newFolderBusy} disabled={!newFolderName.trim()}>
+              <Button type="submit" variant="primary" loading={newFolderBusy} disabled={!newFolderName.trim() || (newFolderPassword.length > 0 && newFolderPassword.length < 8)}>
                 Buat
               </Button>
             </div>
