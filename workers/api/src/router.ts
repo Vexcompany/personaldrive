@@ -320,7 +320,10 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       const children = await listChildren(env, rootId);
       const spaces = children
         .filter((f) => f.mimeType === "application/vnd.google-apps.folder" && !f.trashed)
-        .map((f) => toSpaceSummary(f, session));
+        .map((f) => toSpaceSummary(f, session))
+        // Private spaces are not enumerable by guests. They remain reachable by a direct
+        // PersonalDrive URL so the visitor can enter the lock password.
+        .filter((space) => !space.isLocked || space.isUnlocked || space.isOwner);
       return json({ spaces }, {}, origin);
     }
 
@@ -1238,7 +1241,12 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       if (file.trashed) return err("ITEM_IN_TRASH", "Tidak dapat membagikan item di Sampah.", 400, origin);
       const appOrigin = request.headers.get("origin");
       if (!appOrigin) return err("INVALID_PAYLOAD", "Origin website tidak tersedia untuk membuat tautan PersonalDrive.", 400, origin);
-      const shareUrl = `${appOrigin.replace(/\/$/, "")}/preview?id=${encodeURIComponent(body.fileId)}`;
+      const base = appOrigin.replace(/\/$/, "");
+      const shareUrl = file.mimeType === "application/vnd.google-apps.folder"
+        ? (file.id === spaceFolder.id
+            ? `${base}/drive?spaceId=${encodeURIComponent(spaceFolder.id)}`
+            : `${base}/drive?spaceId=${encodeURIComponent(spaceFolder.id)}&folderId=${encodeURIComponent(file.id)}`)
+        : `${base}/preview?id=${encodeURIComponent(body.fileId)}&spaceId=${encodeURIComponent(spaceFolder.id)}`;
       return json({ webViewLink: shareUrl }, {}, origin);
     }
 
