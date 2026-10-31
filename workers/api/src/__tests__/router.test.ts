@@ -175,7 +175,7 @@ describe("Personal Drive API router", () => {
     });
     expect(directShare.status).toBe(200);
     const directShareData = (await directShare.json()) as { webViewLink: string };
-    expect(directShareData.webViewLink).toBe(`https://drive.example/preview?id=${fileId}`);
+    expect(directShareData.webViewLink).toBe(`https://drive.example/preview?id=${fileId}&spaceId=${space.id}`);
 
     // Anonymous visitor CANNOT upload, create folder, rename, or delete
     const visitorFolder = await req("/folders", {
